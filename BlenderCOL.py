@@ -1,15 +1,17 @@
 bl_info = {
-    "name": "Export COL with Obj2Col",
+    "name": "Export COL for Super Mario Sunshine",
     "author": "Blank",
     "version": (1, 0, 0),
     "blender": (2, 71, 0),
     "location": "File > Export > Collision (.col)",
-    "description": "This script allows you do export col files quickly using obj2col directly from blender",
+    "description": "This script allows you do export col files directly from blender. Based on Blank's obj2col",
     "warning": "Might break, doing this mostly for my own convinience",
     "category": "Import-Export"
 }
 
 import bpy
+import bmesh
+from btypes.big_endian import *
 import os
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import (BoolProperty,
@@ -181,10 +183,18 @@ class ExportCOL(bpy.types.Operator, ExportHelper):
 	#To do: add material presets
 	
     def execute(self, context):        # execute() is called by blender when running the operator.
-        Obj = bpy.context.scene.objects.active
-        Mesh = Obj.data
         VertexList = []
         Triangles = []
+        bm = bmesh.new()
+        for Obj in bpy.context.scene.objects: #join all objects
+            MyMesh = Obj.to_mesh(context.scene, True, 'PREVIEW')#make a copy of the object we can modify freely
+            bm.from_mesh(MyMesh)
+        
+        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method=0, ngon_method=0) #triangulate bmesh
+        #triangulate_mesh(Mesh)
+        Mesh = bpy.data.meshes.new( "newMesh" )
+        bm.to_mesh(Mesh)
+        
         for Vert in Mesh.vertices:
             VertexList.append(Vertex(Vert.co.x,Vert.co.y,Vert.co.z)) #add in verts
 
@@ -195,8 +205,20 @@ class ExportCOL(bpy.types.Operator, ExportHelper):
         
         ColStream = open(self.filepath,'wb')
         pack(ColStream,VertexList,Triangles)
+        bpy.data.meshes.remove(Mesh) #delete mesh
         return {'FINISHED'}            # this lets blender know the operator finished successfully.
 	
+# def triangulate_mesh(mesh):
+    # Get a BMesh representation
+    # bm = bmesh.new()
+    # bm.from_mesh(mesh)
+
+    # bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method=0, ngon_method=0)
+
+    # Finish up, write the bmesh back to the mesh
+    # bm.to_mesh(mesh)
+    # bm.free()
+    # del bm
 
 
 def register():
