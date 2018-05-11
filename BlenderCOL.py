@@ -196,7 +196,7 @@ class ExportCOL(bpy.types.Operator, ExportHelper):
         bm.to_mesh(Mesh)
         
         for Vert in Mesh.vertices:
-            VertexList.append(Vertex(Vert.co.x,Vert.co.y,Vert.co.z)) #add in verts
+            VertexList.append(Vertex(Vert.co.x,Vert.co.z,-Vert.co.y)) #add in verts, make sure y is up
 
         for Face in Mesh.polygons:
             MyTriangle = Triangle()
@@ -207,20 +207,16 @@ class ExportCOL(bpy.types.Operator, ExportHelper):
         pack(ColStream,VertexList,Triangles)
         bpy.data.meshes.remove(Mesh) #delete mesh
         return {'FINISHED'}            # this lets blender know the operator finished successfully.
-	
-# def triangulate_mesh(mesh):
-    # Get a BMesh representation
-    # bm = bmesh.new()
-    # bm.from_mesh(mesh)
 
-    # bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method=0, ngon_method=0)
-
-    # Finish up, write the bmesh back to the mesh
-    # bm.to_mesh(mesh)
-    # bm.free()
-    # del bm
-
-
+class CollisionPanel(bpy.types.Panel):
+    bl_label = "Hello from Object context"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "object"
+ 
+    def draw(self, context):
+        self.layout.operator("hello.hello", text='Bonjour').country = "France"
+    
 def register():
     bpy.utils.register_class(ExportCOL)
     bpy.types.INFO_MT_file_export.append(menu_func)
