@@ -172,6 +172,50 @@ def unpack(stream):
 
     return vertices,triangles
 
+class ImportCOL(Operator, ExportHelper): #Operator that exports the collision model into .col file
+    """Import a COL file"""
+    bl_idname = "import_mesh.col"
+    bl_label = "Import COL"
+    filter_glob = StringProperty( 
+        default="*.col",
+        options={'HIDDEN'},
+    )#This property filters what you see in the file browser to just .col files
+
+    check_extension = True
+    filename_ext = ".col" #This is the extension that the model will have
+    def execute(self, context):
+        ColStream = open(self.filepath,'rb')
+        CollisionVertexList = [] #Store a list of verticies
+        Triangles = [] #List of triangles, each containing indicies of verticies
+        CollisionVertexList,Triangles = unpack(ColStream)
+        BlenderVertexList = [] #Store a list of verticies
+        for i in range(0, len(CollisionVertexList)):
+            v = CollisionVertexList[i]
+            BlenderVertexList.append((v.x,-v.z,v.y))#transform coordinates to blender
+            
+        mesh = bpy.data.meshes.new("mesh")  # add a new mesh
+        obj = bpy.data.objects.new("MyObject", mesh)  # add a new object using the mesh
+
+        scene = bpy.context.scene
+        scene.objects.link(obj)  # put the object into the scene (link)
+        scene.objects.active = obj  # set as the active object in the scene
+        obj.select = True  # select object
+
+        mesh = bpy.context.object.data
+        bm = bmesh.new()
+        BMeshVertexList = []
+        for v in BlenderVertexList:
+            BMeshVertexList.append(bm.verts.new(v))  # add a new vert
+            
+        for f in Triangles:
+           bm.faces.new((BMeshVertexList[f.vertex_indices[0]],BMeshVertexList[f.vertex_indices[1]],BMeshVertexList[f.vertex_indices[2]]))
+        
+        bm.to_mesh(mesh)
+        mesh.update()
+        bm.free()
+        
+        return{'FINISHED'}
+
 class ExportCOL(Operator, ExportHelper): #Operator that exports the collision model into .col file
     """Save a COL file"""
     bl_idname = "export_mesh.col"
@@ -372,7 +416,7 @@ class UpdateUI(bpy.types.Operator): #This function will put the values of the se
         return {'FINISHED'}
     
     
-classes = (ExportCOL, CollisionPanel,InitialValues,CollisionProperties,UpdateUI) #list of classes to register/unregister  
+classes = (ExportCOL,ImportCOL, CollisionPanel,InitialValues,CollisionProperties,UpdateUI) #list of classes to register/unregister  
 user_keymaps = []  
 def register():
     for i in classes:
@@ -384,11 +428,15 @@ def register():
     kmi = km.keymap_items.new("object.updateui", 'SELECTMOUSE', 'PRESS', any=True)
     user_keymaps.append((km, kmi))
     
-    bpy.types.INFO_MT_file_export.append(menu_func) #Add to export menu
+    bpy.types.INFO_MT_file_export.append(menu_export) #Add to export menu
+    bpy.types.INFO_MT_file_import.append(menu_import) #Add to export menu
     
 
-def menu_func(self, context):
+def menu_export(self, context):
     self.layout.operator(ExportCOL.bl_idname, text="Collision (.col)")
+    
+def menu_import(self, context):
+    self.layout.operator(ImportCOL.bl_idname, text="Collision (.col)")
     
 def unregister():
     for i in classes:
@@ -399,7 +447,8 @@ def unregister():
         km.keymap_items.remove(kmi)
     user_keymaps.clear()
     
-    bpy.types.INFO_MT_file_export.remove(menu_func)
+    bpy.types.INFO_MT_file_export.remove(menu_export)
+    bpy.types.INFO_MT_file_import.remove(menu_import)
 
 
 # This allows you to run the script directly from blenders text editor
