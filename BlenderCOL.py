@@ -172,31 +172,32 @@ def unpack(stream):
 
     return vertices,triangles
 
-class ExportCOL(Operator, ExportHelper):
+class ExportCOL(Operator, ExportHelper): #Operator that exports the collision model into .col file
     """Save a COL file"""
     bl_idname = "export_mesh.col"
     bl_label = "Export COL"
-    filter_glob = StringProperty(
+    filter_glob = StringProperty( 
         default="*.col",
         options={'HIDDEN'},
-    )
+    )#This property filters what you see in the file browser to just .col files
 
     check_extension = True
-    filename_ext = ".col"
+    filename_ext = ".col" #This is the extension that the model will have
 	
 	#To do: add material presets
 	
     def execute(self, context):        # execute() is called by blender when running the operator.
-        VertexList = []
-        Triangles = []
-        bm = bmesh.new()
+        bpy.ops.object.mode_set (mode = 'OBJECT') #Set mode to be object mode
+        VertexList = [] #Store a list of verticies
+        Triangles = [] #List of triangles, each containing indicies of verticies
+        bm = bmesh.new() #Define new bmesh
         for Obj in bpy.context.scene.objects: #join all objects
             MyMesh = Obj.to_mesh(context.scene, True, 'PREVIEW')#make a copy of the object we can modify freely
-            bm.from_mesh(MyMesh)
+            bm.from_mesh(MyMesh) #Add the above copy into the bmesh
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method=0, ngon_method=0) #triangulate bmesh
         #triangulate_mesh(Mesh)
-        Mesh = bpy.data.meshes.new( "newMesh" )
+        Mesh = bpy.data.meshes.new("newMesh")
         bm.to_mesh(Mesh)
         
         for Vert in Mesh.vertices:
@@ -212,42 +213,42 @@ class ExportCOL(Operator, ExportHelper):
         bpy.data.meshes.remove(Mesh) #delete mesh
         return {'FINISHED'}            # this lets blender know the operator finished successfully.
         
-class CollisionLayer(Enum):
+class CollisionLayer(Enum): #This stores the data layer names that each Unknown will be on.
     Unknown0 = "CollisionEditorUnknown0"
     Unknown1 = "CollisionEditorUnknown1"
-    Unknown2 = "CollisionEditorUnknown2"
-    Unknown3 = "CollisionEditorUnknown3"
-    HasUnknown4 = "CollisionEditorHasUnknown4"
+    Unknown2 = "CollisionEditorUnknown2" #For example Unknown2 is stored on a data layer called "CollisionEditorUnknown2"
+    Unknown3 = "CollisionEditorUnknown3" 
+    HasUnknown4 = "CollisionEditorHasUnknown4" #This layer is an integer because boolean layers don't exist
     Unknown4 = "CollisionEditorUnknown4"
         
-def U0Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown0.value)
-    self["U3"]+=1
+def U0Update(self, context): #These functions are called when the UI elements change
+    ChangeValuesOfSelection(CollisionLayer.Unknown0.value,bpy.context.scene.ColEditor.U0)
     return
 
-def U1Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown1.value)
+def U1Update(self, context): #It would be nice to call ChangeValuesOfSelection directly but Update Functions can't have parameters as far as I am aware
+    ChangeValuesOfSelection(CollisionLayer.Unknown1.value,bpy.context.scene.ColEditor.U1)
     return
 
 def U2Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown2.value)
+    ChangeValuesOfSelection(CollisionLayer.Unknown2.value,bpy.context.scene.ColEditor.U2)
     return
     
 def U3Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown3.value)
+    ChangeValuesOfSelection(CollisionLayer.Unknown3.value,bpy.context.scene.ColEditor.U3)
     print("Bobson")
     return
     
 def HasU4Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.HasUnknown4.value)
+    ToSet = 1 if bpy.context.scene.ColEditor.HasU4 else 0 #In this case a TRUE value is represented by a 1 and FALSE by 0
+    ChangeValuesOfSelection(CollisionLayer.HasUnknown4.value,ToSet)
     return
 
 def U4Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown4.value)
+    ChangeValuesOfSelection(CollisionLayer.Unknown4.value,bpy.context.scene.ColEditor.U4)
     return
     
 class CollisionProperties(PropertyGroup): #This defines the UI elements
-    U0 = IntProperty(name = "Unknown 0",default=0, min=0, max=255, update = U0Update)
+    U0 = IntProperty(name = "Unknown 0",default=0, min=0, max=255, update = U0Update) #Here we put parameters for the UI elements and point to the Update functions
     U1 = IntProperty(name = "Unknown 1",default=0, min=0, max=255, update = U1Update)
     U2 = IntProperty(name = "Unknown 2",default=0, min=0, max=255, update = U2Update)
     U3 = IntProperty(name = "Unknown 3",default=0, min=0, max=255, update = U3Update)
@@ -264,12 +265,12 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         EnableColumns = False #Boolean is true means we will enable the columns
         EnableInitial = False #Only allow initialise in edit mode
         if(bpy.context.object.mode == 'EDIT'):
-            EnableInitial = True
+            EnableInitial = True #We must be in edit mode to initalise values
             obj = bpy.context.scene.objects.active #This method might be quite taxing
             bm = bmesh.from_edit_mesh(obj.data)
             U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
             if U0Layer is not None: #If the model has collision values
-                EnableColumns = True
+                EnableColumns = True #Then we enabled editing the values
             del bm
             del obj
             
@@ -277,13 +278,13 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         
         row = self.layout.row(align=True)
         row.alignment = 'EXPAND'
-        row.operator("init.colvalues", text='Initialise values')
+        row.operator("init.colvalues", text='Initialise values') #Here we put the UI elements defined in CollisionProperties into rows and columns
         row.enabled = EnableInitial
         
         
         column1 = self.layout.column(align = True)
         column1.prop(bpy.context.scene.ColEditor, "U0")
-        column1.prop(bpy.context.scene.ColEditor, "U1")
+        column1.prop(bpy.context.scene.ColEditor, "U1") 
         column1.prop(bpy.context.scene.ColEditor, "U2")
         column1.prop(bpy.context.scene.ColEditor, "U3")
         column1.enabled = EnableColumns
@@ -291,10 +292,10 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         column1.prop(bpy.context.scene.ColEditor, "HasU4")
         column2 = self.layout.column(align = True)
         column2.prop(bpy.context.scene.ColEditor, "U4")
-        column2.enabled = bpy.context.scene.ColEditor.HasU4 and EnableColumns
+        column2.enabled = bpy.context.scene.ColEditor.HasU4 and EnableColumns #Collision values must exist AND we must have "Has Unknown4" checked
         
         
-class InitialValues(Operator):
+class InitialValues(Operator): #This creates the data layers that store the collision values
     bl_idname = "init.colvalues"
     bl_label = "Initialise Collision Values"
     
@@ -302,7 +303,7 @@ class InitialValues(Operator):
         obj = bpy.context.scene.objects.active
         bm = bmesh.from_edit_mesh(obj.data)
         
-        bm.faces.layers.int.new(CollisionLayer.Unknown0.value) #create layers to store collision values
+        bm.faces.layers.int.new(CollisionLayer.Unknown0.value) #Uses Enum to get names
         bm.faces.layers.int.new(CollisionLayer.Unknown1.value)
         bm.faces.layers.int.new(CollisionLayer.Unknown2.value)
         bm.faces.layers.int.new(CollisionLayer.Unknown3.value)
@@ -310,27 +311,12 @@ class InitialValues(Operator):
         bm.faces.layers.int.new(CollisionLayer.Unknown4.value)
         return{'FINISHED'}        
     
-def ChangeValuesOfSelection(ValueToChange):
+def ChangeValuesOfSelection(ValueToChange,ValueToSet):
     obj = bpy.context.scene.objects.active
     bm = bmesh.from_edit_mesh(obj.data)
-    selected_faces = [f for f in bm.faces if f.select]
+    selected_faces = [f for f in bm.faces if f.select] #This gets an array of selected faces
     #get the custom data layer by its name
     my_id = bm.faces.layers.int[ValueToChange]
-    
-    ValueToSet = 0
-    if ValueToChange == CollisionLayer.Unknown0.value:
-        ValueToSet = bpy.context.scene.ColEditor.U0
-    elif ValueToChange == CollisionLayer.Unknown1.value:
-        ValueToSet = bpy.context.scene.ColEditor.U1
-    elif ValueToChange == CollisionLayer.Unknown2.value:
-        ValueToSet = bpy.context.scene.ColEditor.U2
-    elif ValueToChange == CollisionLayer.Unknown3.value:
-        ValueToSet = bpy.context.scene.ColEditor.U3
-    elif ValueToChange == CollisionLayer.HasUnknown4.value:
-        ValueToSet = 1 if bpy.context.scene.ColEditor.HasU4 else 0
-    elif ValueToChange == CollisionLayer.Unknown4.value:
-        ValueToSet = bpy.context.scene.ColEditor.U4
-
 
     for face in bm.faces:
         if(face.select == True):
@@ -338,18 +324,18 @@ def ChangeValuesOfSelection(ValueToChange):
             if ValueToChange == CollisionLayer.Unknown4.value: #If you somehow edit Unknown4 when HasUnknown4 is off, like with a group selection, make sure to turn it on
                 face[CollisionLayer.HasUnknown4.value] = 1
 
-    bmesh.update_edit_mesh(obj.data, False,False)    
+    bmesh.update_edit_mesh(obj.data, False,False) #Update mesh with new values    
     
 
     
 class UpdateUI(bpy.types.Operator):
     bl_idname = "object.updateui"
-    bl_label = "Simple Object Operator"
+    bl_label = "Updates the UI with values from selection"
 
 
     def execute(self, context):
         if(bpy.context.object.mode == 'EDIT'):
-            obj = bpy.context.scene.objects.active #This method might be quite taxing
+            obj = bpy.context.scene.objects.active
             bm = bmesh.from_edit_mesh(obj.data)
             U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
             if U0Layer is not None: #If the model has collision values
@@ -367,11 +353,10 @@ def register():
     #handle the keymap
     wm = bpy.context.window_manager
     km = wm.keyconfigs.user.keymaps.new(name='3D View', space_type='VIEW_3D')
-
     kmi = km.keymap_items.new("object.updateui", 'SELECTMOUSE', 'PRESS', any=True)
-
     user_keymaps.append((km, kmi))
-    bpy.types.INFO_MT_file_export.append(menu_func)
+    
+    bpy.types.INFO_MT_file_export.append(menu_func) #Add to export menu
     
 
 def menu_func(self, context):
