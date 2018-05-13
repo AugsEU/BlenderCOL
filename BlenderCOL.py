@@ -197,20 +197,30 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method=0, ngon_method=0) #triangulate bmesh
         #triangulate_mesh(Mesh)
-        Mesh = bpy.data.meshes.new("newMesh")
-        bm.to_mesh(Mesh)
+        U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value)
+        U1Layer = bm.faces.layers.int.get(CollisionLayer.Unknown1.value)
+        U2Layer = bm.faces.layers.int.get(CollisionLayer.Unknown2.value)
+        U3Layer = bm.faces.layers.int.get(CollisionLayer.Unknown3.value)
+        HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
+        U4Layer = bm.faces.layers.int.get(CollisionLayer.Unknown4.value)
+
         
-        for Vert in Mesh.vertices:
+        for Vert in bm.verts:
             VertexList.append(Vertex(Vert.co.x,Vert.co.z,-Vert.co.y)) #add in verts, make sure y is up
 
-        for Face in Mesh.polygons:
+        for Face in bm.faces:
             MyTriangle = Triangle()
-            MyTriangle.vertex_indices = [Face.vertices[0],Face.vertices[1],Face.vertices[2]] #add three vertex indicies
+            MyTriangle.vertex_indices = [Face.verts[0].index,Face.verts[1].index,Face.verts[2].index] #add three vertex indicies
+            MyTriangle.unknown0 = Face[U0Layer]
+            MyTriangle.unknown1 = Face[U1Layer]
+            MyTriangle.unknown2 = Face[U2Layer]
+            MyTriangle.unknown3 = Face[U3Layer]
+            if Face[HasU4Layer] != 0:
+                MyTriangle.unknown4 = Face[U4Layer]
             Triangles.append(MyTriangle) #add triangles
         
         ColStream = open(self.filepath,'wb')
         pack(ColStream,VertexList,Triangles)
-        bpy.data.meshes.remove(Mesh) #delete mesh
         return {'FINISHED'}            # this lets blender know the operator finished successfully.
         
 class CollisionLayer(Enum): #This stores the data layer names that each Unknown will be on.
@@ -235,7 +245,6 @@ def U2Update(self, context):
     
 def U3Update(self, context):
     ChangeValuesOfSelection(CollisionLayer.Unknown3.value,bpy.context.scene.ColEditor.U3)
-    print("Bobson")
     return
     
 def HasU4Update(self, context):
@@ -246,12 +255,13 @@ def HasU4Update(self, context):
 def U4Update(self, context):
     ChangeValuesOfSelection(CollisionLayer.Unknown4.value,bpy.context.scene.ColEditor.U4)
     return
-    
+  
+  
 class CollisionProperties(PropertyGroup): #This defines the UI elements
     U0 = IntProperty(name = "Unknown 0",default=0, min=0, max=255, update = U0Update) #Here we put parameters for the UI elements and point to the Update functions
     U1 = IntProperty(name = "Unknown 1",default=0, min=0, max=255, update = U1Update)
     U2 = IntProperty(name = "Unknown 2",default=0, min=0, max=255, update = U2Update)
-    U3 = IntProperty(name = "Unknown 3",default=0, min=0, max=255, update = U3Update)
+    U3 = IntProperty(name = "Unknown 3",default=0, min=0, max=255, update = U3Update)#I probably should have made these an array
     HasU4 = BoolProperty(name="Has Unknown 4", default=False, update = HasU4Update)
     U4 = IntProperty(name = "Unknown 4",default=0, min=0, max=65535, update = U4Update)
 
@@ -322,13 +332,14 @@ def ChangeValuesOfSelection(ValueToChange,ValueToSet):
         if(face.select == True):
             face[my_id] = ValueToSet
             if ValueToChange == CollisionLayer.Unknown4.value: #If you somehow edit Unknown4 when HasUnknown4 is off, like with a group selection, make sure to turn it on
-                face[CollisionLayer.HasUnknown4.value] = 1
+                HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
+                face[HasU4Layer] = 1
+                
 
     bmesh.update_edit_mesh(obj.data, False,False) #Update mesh with new values    
     
-
     
-class UpdateUI(bpy.types.Operator):
+class UpdateUI(bpy.types.Operator): #This function will put the values of the selected face into the UI elements
     bl_idname = "object.updateui"
     bl_label = "Updates the UI with values from selection"
 
@@ -340,7 +351,24 @@ class UpdateUI(bpy.types.Operator):
             U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
             if U0Layer is not None: #If the model has collision values
                 selected_faces = [f for f in bm.faces if f.select]
-                bpy.context.scene.ColEditor.U0 = selected_faces[0][U0Layer]
+                if len(selected_faces) > 0:
+                    bpy.context.scene.ColEditor["U0"] = selected_faces[0][U0Layer] #This is why they should have been an array
+                    
+                    U1Layer = bm.faces.layers.int.get(CollisionLayer.Unknown1.value) #Get name of data layer
+                    bpy.context.scene.ColEditor["U1"] = selected_faces[0][U1Layer] #Set UI element to value in selected face
+                    
+                    U2Layer = bm.faces.layers.int.get(CollisionLayer.Unknown2.value)
+                    bpy.context.scene.ColEditor["U2"] = selected_faces[0][U2Layer] #We call it like this so that we don't call the update function. Otherwise selecting multiple faces would set them all equal
+                    
+                    U3Layer = bm.faces.layers.int.get(CollisionLayer.Unknown3.value)
+                    bpy.context.scene.ColEditor["U3"] = selected_faces[0][U3Layer] #We choose index 0 but it doesn't really matter. Unfortunetly you can't get int properties to display "--" used, for example, when there are different unknown0 values across the selected faces
+                    
+                    HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
+                    bpy.context.scene.ColEditor["HasU4"] = False if selected_faces[0][HasU4Layer]  == 0 else True 
+                    
+                    U4Layer = bm.faces.layers.int.get(CollisionLayer.Unknown4.value)
+                    bpy.context.scene.ColEditor["U4"] = selected_faces[0][U4Layer]
+
         return {'FINISHED'}
     
     
