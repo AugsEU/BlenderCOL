@@ -188,10 +188,7 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         CollisionVertexList = [] #Store a list of verticies
         Triangles = [] #List of triangles, each containing indicies of verticies
         CollisionVertexList,Triangles = unpack(ColStream)
-        BlenderVertexList = [] #Store a list of verticies
-        for i in range(0, len(CollisionVertexList)):
-            v = CollisionVertexList[i]
-            BlenderVertexList.append((v.x,-v.z,v.y))#transform coordinates to blender
+
             
         mesh = bpy.data.meshes.new("mesh")  # add a new mesh
         obj = bpy.data.objects.new("MyObject", mesh)  # add a new object using the mesh
@@ -203,12 +200,31 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
 
         mesh = bpy.context.object.data
         bm = bmesh.new()
+        U0Layer = bm.faces.layers.int.new(CollisionLayer.Unknown0.value) #Create new data layers
+        U1Layer = bm.faces.layers.int.new(CollisionLayer.Unknown1.value)
+        U2Layer = bm.faces.layers.int.new(CollisionLayer.Unknown2.value)
+        U3Layer = bm.faces.layers.int.new(CollisionLayer.Unknown3.value)
+        HasU4Layer = bm.faces.layers.int.new(CollisionLayer.HasUnknown4.value)
+        U4Layer = bm.faces.layers.int.new(CollisionLayer.Unknown4.value)
+        
         BMeshVertexList = []
-        for v in BlenderVertexList:
-            BMeshVertexList.append(bm.verts.new(v))  # add a new vert
+        
+        
+        for v in CollisionVertexList:
+            BMeshVertexList.append(bm.verts.new((v.x,-v.z,v.y)))  # add a new vert
             
         for f in Triangles:
-           bm.faces.new((BMeshVertexList[f.vertex_indices[0]],BMeshVertexList[f.vertex_indices[1]],BMeshVertexList[f.vertex_indices[2]]))
+            try: #Try and catch to avoid exception on duplicate triangles. Dodgy...
+                MyFace = bm.faces.new((BMeshVertexList[f.vertex_indices[0]],BMeshVertexList[f.vertex_indices[1]],BMeshVertexList[f.vertex_indices[2]]))
+                MyFace[U0Layer] = f.unknown0
+                MyFace[U1Layer] = f.unknown1
+                MyFace[U2Layer] = f.unknown2
+                MyFace[U3Layer] = f.unknown3
+                MyFace[U4Layer] = f.unknown4
+                if MyFace[U4Layer] is not None:
+                    MyFace[HasU4Layer] = True
+            except:
+                continue
         
         bm.to_mesh(mesh)
         mesh.update()
@@ -255,12 +271,13 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         for Face in bm.faces:
             MyTriangle = Triangle()
             MyTriangle.vertex_indices = [Face.verts[0].index,Face.verts[1].index,Face.verts[2].index] #add three vertex indicies
-            MyTriangle.unknown0 = Face[U0Layer]
-            MyTriangle.unknown1 = Face[U1Layer]
-            MyTriangle.unknown2 = Face[U2Layer]
-            MyTriangle.unknown3 = Face[U3Layer]
-            if Face[HasU4Layer] != 0:
-                MyTriangle.unknown4 = Face[U4Layer]
+            if U0Layer is not None:
+                MyTriangle.unknown0 = Face[U0Layer]
+                MyTriangle.unknown1 = Face[U1Layer]
+                MyTriangle.unknown2 = Face[U2Layer]
+                MyTriangle.unknown3 = Face[U3Layer]
+                if Face[HasU4Layer] != 0:
+                    MyTriangle.unknown4 = Face[U4Layer]
             Triangles.append(MyTriangle) #add triangles
         
         ColStream = open(self.filepath,'wb')
@@ -364,7 +381,7 @@ class InitialValues(Operator): #This creates the data layers that store the coll
         bm.faces.layers.int.new(CollisionLayer.HasUnknown4.value)
         bm.faces.layers.int.new(CollisionLayer.Unknown4.value)
         return{'FINISHED'}        
-    
+
 def ChangeValuesOfSelection(ValueToChange,ValueToSet):
     obj = bpy.context.scene.objects.active
     bm = bmesh.from_edit_mesh(obj.data)
