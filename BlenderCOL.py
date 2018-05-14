@@ -245,6 +245,12 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
     filename_ext = ".col" #This is the extension that the model will have
 	
 	#To do: add material presets
+    
+    Scale = IntProperty(
+        name="Scale factor",
+        description="Scale the col file by this amount",
+        default=1,
+    )
 	
     def execute(self, context):        # execute() is called by blender when running the operator.
         bpy.ops.object.mode_set (mode = 'OBJECT') #Set mode to be object mode
@@ -266,7 +272,7 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
 
         
         for Vert in bm.verts:
-            VertexList.append(Vertex(Vert.co.x,Vert.co.z,-Vert.co.y)) #add in verts, make sure y is up
+            VertexList.append(Vertex(Vert.co.x*self.Scale,Vert.co.z*self.Scale,-Vert.co.y*self.Scale)) #add in verts, make sure y is up
 
         for Face in bm.faces:
             MyTriangle = Triangle()
