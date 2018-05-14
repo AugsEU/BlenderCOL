@@ -407,10 +407,14 @@ def ChangeValuesOfSelection(ValueToChange,ValueToSet):
     
     
 class UpdateUI(bpy.types.Operator): #This function will put the values of the selected face into the UI elements
-    bl_idname = "ui.update"
+    """Tooltip"""
+    bl_idname = "update.ui"
     bl_label = "Updates the UI with values from selection"
 
-
+    @classmethod
+    def poll(cls, context):
+        return context.object is not None and context.selected_objects
+    
     def execute(self, context):
         if(bpy.context.object.mode == 'EDIT'):
             obj = bpy.context.scene.objects.active
@@ -441,15 +445,34 @@ class UpdateUI(bpy.types.Operator): #This function will put the values of the se
     
 classes = (ExportCOL,ImportCOL, CollisionPanel,InitialValues,CollisionProperties,UpdateUI) #list of classes to register/unregister  
 addon_keymaps = []  
+kmi=None
+
+
+def add_hotkey():
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.user 
+    km = kc.keymaps.new(name='3D View', space_type='VIEW_3D') 
+    kmi = km.keymap_items.new(UpdateUI.bl_idname, 'SELECTMOUSE', 'PRESS', any=True,head=True)                             
+    kmi.active = True
+    addon_keymaps.append((km, kmi))
+
+def remove_hotkey():
+    ''' clears all addon level keymap hotkeys stored in addon_keymaps '''
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.user
+    km = kc.keymaps['3D View']
+    
+    for km, kmi in addon_keymaps:
+        #km.keymap_items.remove(kmi)
+        wm.keyconfigs.user.keymaps.remove(km)
+    addon_keymaps.clear()
+    
 def register():
     for i in classes:
         register_class(i)
     Scene.ColEditor = PointerProperty(type=CollisionProperties) #store in the scene
     #handle the keymap
-    wm = bpy.context.window_manager
-    km = wm.keyconfigs.addon.keymaps.new(name='3D View', space_type='VIEW_3D')
-    kmi = km.keymap_items.new("object.updateui", 'SELECTMOUSE', 'PRESS', any=True)
-    addon_keymaps.append(km)
+    add_hotkey()
     
     bpy.types.INFO_MT_file_export.append(menu_export) #Add to export menu
     bpy.types.INFO_MT_file_import.append(menu_import) #Add to export menu
@@ -467,11 +490,8 @@ def unregister():
     bpy.types.INFO_MT_file_export.remove(menu_export)
     bpy.types.INFO_MT_file_import.remove(menu_import)
     # handle the keymap
-    wm = bpy.context.window_manager
-    for km in addon_keymaps:
-        wm.keyconfigs.addon.keymaps.remove(km)
-    # clear the list
-    addon_keymaps.clear()
+    #remove_hotkey()
+    
     
 
 
