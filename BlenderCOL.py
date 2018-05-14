@@ -246,7 +246,7 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
 	
 	#To do: add material presets
     
-    Scale = IntProperty(
+    Scale = FloatProperty(
         name="Scale factor",
         description="Scale the col file by this amount",
         default=1,
@@ -407,7 +407,7 @@ def ChangeValuesOfSelection(ValueToChange,ValueToSet):
     
     
 class UpdateUI(bpy.types.Operator): #This function will put the values of the selected face into the UI elements
-    bl_idname = "object.updateui"
+    bl_idname = "ui.update"
     bl_label = "Updates the UI with values from selection"
 
 
@@ -440,16 +440,16 @@ class UpdateUI(bpy.types.Operator): #This function will put the values of the se
     
     
 classes = (ExportCOL,ImportCOL, CollisionPanel,InitialValues,CollisionProperties,UpdateUI) #list of classes to register/unregister  
-user_keymaps = []  
+addon_keymaps = []  
 def register():
     for i in classes:
         register_class(i)
     Scene.ColEditor = PointerProperty(type=CollisionProperties) #store in the scene
     #handle the keymap
     wm = bpy.context.window_manager
-    km = wm.keyconfigs.user.keymaps.new(name='3D View', space_type='VIEW_3D')
+    km = wm.keyconfigs.addon.keymaps.new(name='3D View', space_type='VIEW_3D')
     kmi = km.keymap_items.new("object.updateui", 'SELECTMOUSE', 'PRESS', any=True)
-    user_keymaps.append((km, kmi))
+    addon_keymaps.append(km)
     
     bpy.types.INFO_MT_file_export.append(menu_export) #Add to export menu
     bpy.types.INFO_MT_file_import.append(menu_import) #Add to export menu
@@ -464,14 +464,16 @@ def menu_import(self, context):
 def unregister():
     for i in classes:
         unregister_class(i)
-    
-    #handle the keymap
-    for km, kmi in user_keymaps:
-        km.keymap_items.remove(kmi)
-    user_keymaps.clear()
-    
     bpy.types.INFO_MT_file_export.remove(menu_export)
     bpy.types.INFO_MT_file_import.remove(menu_import)
+    # handle the keymap
+    wm = bpy.context.window_manager
+    for km in addon_keymaps:
+        wm.keyconfigs.addon.keymaps.remove(km)
+    # clear the list
+    addon_keymaps.clear()
+    
+
 
 
 # This allows you to run the script directly from blenders text editor
