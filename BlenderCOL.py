@@ -5,7 +5,6 @@ bl_info = {
     "blender": (2, 71, 0),
     "location": "File > Export > Collision (.col)",
     "description": "This script allows you do export col files directly from blender. Based on Blank's obj2col",
-    "warning": "Might clutter your keymaps if you register/unregister this too much",
     "category": "Import-Export"
 }
 
