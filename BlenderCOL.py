@@ -5,16 +5,18 @@ bl_info = {
     "blender": (2, 71, 0),
     "location": "File > Export > Collision (.col)",
     "description": "This script allows you do export col files directly from blender. Based on Blank's obj2col",
-    "warning": "Might clutter your keymaps if you register/unregister this too much",
+    "warning": "Runs update function every 0.2 seconds",
     "category": "Import-Export"
 }
 
 import bpy
 import bmesh
+import threading
 from enum import Enum
 from btypes.big_endian import *
 from bpy.types import PropertyGroup, Panel, Scene, Operator
 from bpy.utils import register_class, unregister_class
+from bpy.app.handlers import persistent
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import (BoolProperty,
     FloatProperty,
@@ -25,6 +27,8 @@ from bpy.props import (BoolProperty,
     )
 
 
+    
+    
 class Header(Struct):
     vertex_count = uint32
     vertex_offset = uint32
@@ -322,8 +326,7 @@ def HasU4Update(self, context):
 def U4Update(self, context):
     ChangeValuesOfSelection(CollisionLayer.Unknown4.value,bpy.context.scene.ColEditor.U4)
     return
-  
-  
+   
 class CollisionProperties(PropertyGroup): #This defines the UI elements
     U0 = IntProperty(name = "Unknown 0",default=0, min=0, max=255, update = U0Update) #Here we put parameters for the UI elements and point to the Update functions
     U1 = IntProperty(name = "Unknown 1",default=0, min=0, max=255, update = U1Update)
@@ -338,11 +341,14 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
     bl_region_type = "WINDOW"
     bl_context = "object"
  
+    @classmethod
+    def poll(cls, context):
+        # Only allow in edit mode for a selected mesh.
+        return context.mode == "EDIT_MESH" and context.object is not None and context.object.type == "MESH"
+ 
     def draw(self, context):
         EnableColumns = False #Boolean is true means we will enable the columns
-        EnableInitial = False #Only allow initialise in edit mode
         if(bpy.context.object.mode == 'EDIT'):
-            EnableInitial = True #We must be in edit mode to initalise values
             obj = bpy.context.scene.objects.active #This method might be quite taxing
             bm = bmesh.from_edit_mesh(obj.data)
             U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
@@ -356,7 +362,6 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         row = self.layout.row(align=True)
         row.alignment = 'EXPAND'
         row.operator("init.colvalues", text='Initialise values') #Here we put the UI elements defined in CollisionProperties into rows and columns
-        row.enabled = EnableInitial
         
         
         column1 = self.layout.column(align = True)
@@ -405,75 +410,40 @@ def ChangeValuesOfSelection(ValueToChange,ValueToSet):
 
     bmesh.update_edit_mesh(obj.data, False,False) #Update mesh with new values    
     
-    
-class UpdateUI(bpy.types.Operator): #This function will put the values of the selected face into the UI elements
-    """Tooltip"""
-    bl_idname = "update.ui"
-    bl_label = "Updates the UI with values from selection"
-
-    @classmethod
-    def poll(cls, context):
-        return context.object is not None and context.selected_objects
-    
-    def execute(self, context):
-        if(bpy.context.object.mode == 'EDIT'):
-            obj = bpy.context.scene.objects.active
+@persistent
+def UpdateUI(scene):
+    obj = scene.objects.active
+    if(obj.mode == 'EDIT' and obj.type == 'MESH'):
             bm = bmesh.from_edit_mesh(obj.data)
             U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
             if U0Layer is not None: #If the model has collision values
-                selected_faces = [f for f in bm.faces if f.select]
-                if len(selected_faces) > 0:
-                    bpy.context.scene.ColEditor["U0"] = selected_faces[0][U0Layer] #This is why they should have been an array
+                face = bm.faces.active
+                if face is not None:
+                    bpy.context.scene.ColEditor["U0"] = face[U0Layer] #This is why they should have been an array
                     
                     U1Layer = bm.faces.layers.int.get(CollisionLayer.Unknown1.value) #Get name of data layer
-                    bpy.context.scene.ColEditor["U1"] = selected_faces[0][U1Layer] #Set UI element to value in selected face
+                    bpy.context.scene.ColEditor["U1"] = face[U1Layer] #Set UI element to value in selected face
                     
                     U2Layer = bm.faces.layers.int.get(CollisionLayer.Unknown2.value)
-                    bpy.context.scene.ColEditor["U2"] = selected_faces[0][U2Layer] #We call it like this so that we don't call the update function. Otherwise selecting multiple faces would set them all equal
+                    bpy.context.scene.ColEditor["U2"] = face[U2Layer] #We call it like this so that we don't call the update function. Otherwise selecting multiple faces would set them all equal
                     
                     U3Layer = bm.faces.layers.int.get(CollisionLayer.Unknown3.value)
-                    bpy.context.scene.ColEditor["U3"] = selected_faces[0][U3Layer] #We choose index 0 but it doesn't really matter. Unfortunetly you can't get int properties to display "--" used, for example, when there are different unknown0 values across the selected faces
+                    bpy.context.scene.ColEditor["U3"] = face[U3Layer] #We choose index 0 but it doesn't really matter. Unfortunetly you can't get int properties to display "--" used, for example, when there are different unknown0 values across the selected faces
                     
                     HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
-                    bpy.context.scene.ColEditor["HasU4"] = False if selected_faces[0][HasU4Layer]  == 0 else True 
+                    bpy.context.scene.ColEditor["HasU4"] = False if face[HasU4Layer]  == 0 else True 
                     
                     U4Layer = bm.faces.layers.int.get(CollisionLayer.Unknown4.value)
-                    bpy.context.scene.ColEditor["U4"] = selected_faces[0][U4Layer]
-
-        return {'FINISHED'}
+                    bpy.context.scene.ColEditor["U4"] = face[U4Layer]
+    return None    
     
     
-classes = (ExportCOL,ImportCOL, CollisionPanel,InitialValues,CollisionProperties,UpdateUI) #list of classes to register/unregister  
-addon_keymaps = []  
-kmi=None
-
-
-def add_hotkey():
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.user 
-    km = kc.keymaps.new(name='3D View', space_type='VIEW_3D') 
-    kmi = km.keymap_items.new(UpdateUI.bl_idname, 'SELECTMOUSE', 'PRESS', any=True,head=True)                             
-    kmi.active = True
-    addon_keymaps.append((km, kmi))
-
-def remove_hotkey():
-    ''' clears all addon level keymap hotkeys stored in addon_keymaps '''
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.user
-    km = kc.keymaps['3D View']
-    
-    for km, kmi in addon_keymaps:
-        #km.keymap_items.remove(kmi)
-        wm.keyconfigs.user.keymaps.remove(km)
-    addon_keymaps.clear()
-    
+classes = (ExportCOL,ImportCOL, CollisionPanel,InitialValues,CollisionProperties) #list of classes to register/unregister  
 def register():
     for i in classes:
         register_class(i)
     Scene.ColEditor = PointerProperty(type=CollisionProperties) #store in the scene
-    #handle the keymap
-    add_hotkey()
-    
+    bpy.app.handlers.scene_update_post.append(UpdateUI)
     bpy.types.INFO_MT_file_export.append(menu_export) #Add to export menu
     bpy.types.INFO_MT_file_import.append(menu_import) #Add to export menu
     
@@ -489,12 +459,10 @@ def unregister():
         unregister_class(i)
     bpy.types.INFO_MT_file_export.remove(menu_export)
     bpy.types.INFO_MT_file_import.remove(menu_import)
-    # handle the keymap
-    #remove_hotkey()
-    
-    
+    if UpdateUI in bpy.app.handlers.render_post:
+        bpy.app.handlers.render_complete.remove(UpdateUI)#remove handlers
 
-
+    
 
 # This allows you to run the script directly from blenders text editor
 # to test the addon without having to install it.
