@@ -8,7 +8,7 @@ bl_info = {
     "warning": "Runs update function every 0.2 seconds",
     "category": "Import-Export"
 }
-
+import math
 import bpy
 import bmesh
 import threading
@@ -202,31 +202,49 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         scene.objects.active = obj  # set as the active object in the scene
         obj.select = True  # select object
 
-        mesh = bpy.context.object.data
+        mesh = obj.data
         bm = bmesh.new()
-        U0Layer = bm.faces.layers.int.new(CollisionLayer.Unknown0.value) #Create new data layers
-        U1Layer = bm.faces.layers.int.new(CollisionLayer.Unknown1.value)
-        U2Layer = bm.faces.layers.int.new(CollisionLayer.Unknown2.value)
-        U3Layer = bm.faces.layers.int.new(CollisionLayer.Unknown3.value)
-        HasU4Layer = bm.faces.layers.int.new(CollisionLayer.HasUnknown4.value)
-        U4Layer = bm.faces.layers.int.new(CollisionLayer.Unknown4.value)
-        
         BMeshVertexList = []
         
         
         for v in CollisionVertexList:
             BMeshVertexList.append(bm.verts.new((v.x,-v.z,v.y)))  # add a new vert
-            
+                
         for f in Triangles:
             try: #Try and catch to avoid exception on duplicate triangles. Dodgy...
                 MyFace = bm.faces.new((BMeshVertexList[f.vertex_indices[0]],BMeshVertexList[f.vertex_indices[1]],BMeshVertexList[f.vertex_indices[2]]))
-                MyFace[U0Layer] = f.unknown0
-                MyFace[U1Layer] = f.unknown1
-                MyFace[U2Layer] = f.unknown2
-                MyFace[U3Layer] = f.unknown3
-                MyFace[U4Layer] = f.unknown4
-                if MyFace[U4Layer] is not None:
-                    MyFace[HasU4Layer] = True
+                for i in range(0,len(obj.data.materials)): #Scan materials to find match
+                    mat = obj.data.materials[i]
+                    if f.unknown0 == mat.ColEditor.U0 and f.unknown1 == mat.ColEditor.U1 and f.unknown2 == mat.ColEditor.U2 and f.unknown3 == mat.ColEditor.U3:#Equate unknowns
+                        Unknown4AreEqual = f.unknown4 is mat.ColEditor.U4
+                        Unknown4DontExist = f.unknown4 is None and mat.ColEditor.HasU4 is False #If the unknown4 doesn't exist we need to check for that case
+                        if Unknown4AreEqual or Unknown4DontExist:
+                            MyFace.material_index = i
+                            break #We assigned our material 
+                else: #We did not find a material that matched
+                    print("new mat")
+                    MaterialName = str(f.unknown0)+","+str(f.unknown1)+","+str(f.unknown2)+","+str(f.unknown3)+","+str(f.unknown4)
+                    mat = bpy.data.materials.new(name=MaterialName)
+                    
+                    Magnitude = (f.unknown0**(2) + f.unknown1**(2) + f.unknown2**(2))**(0.5) * (256/256-f.unknown3) #Calculate rgb values
+                    Red = f.unknown0/Magnitude
+                    Green = f.unknown1/Magnitude
+                    Blue = f.unknown2/Magnitude
+                    mat.diffuse_color = (Red,Green,Blue)
+                    
+                    mat.ColEditor.U0 = f.unknown0#Set collision values
+                    mat.ColEditor.U1 = f.unknown1
+                    mat.ColEditor.U2 = f.unknown2
+                    mat.ColEditor.U3 = f.unknown3
+                    
+                    if f.unknown4 is not None:
+                        mat.ColEditor.HasU4 = True
+                        mat.ColEditor.U4 = f.unknown4
+                    else:
+                        mat.ColEditor.HasU4 = False
+                        mat.ColEditor.U4 = 0 
+                    obj.data.materials.append(mat) #add material to our object
+                    MyFace.material_index = len(obj.data.materials) - 1 #Since material was just added it will be the last index
             except:
                 continue
         
@@ -341,7 +359,7 @@ def register():
         register_class(i)
     bpy.types.Material.ColEditor = PointerProperty(type=CollisionProperties) #store in the scene
     bpy.types.INFO_MT_file_export.append(menu_export) #Add to export menu
-    #bpy.types.INFO_MT_file_import.append(menu_import) #Add to export menu
+    bpy.types.INFO_MT_file_import.append(menu_import) #Add to import menu
     
 
 def menu_export(self, context):
@@ -354,7 +372,7 @@ def unregister():
     for i in classes:
         unregister_class(i)
     bpy.types.INFO_MT_file_export.remove(menu_export)
-    #bpy.types.INFO_MT_file_import.remove(menu_import)
+    bpy.types.INFO_MT_file_import.remove(menu_import)
 
     
 
