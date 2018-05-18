@@ -8,7 +8,7 @@ bl_info = {
     "warning": "Runs update function every 0.2 seconds",
     "category": "Import-Export"
 }
-import math
+import random
 import bpy
 import bmesh
 import threading
@@ -48,31 +48,30 @@ class Vertex(Struct):
 
 
 class Group(Struct):
-    unknown0 = uint8 # 0,1,2,4,6,7,8,64,128,129,132,135,160,192, bitfield?
-    unknown1 = uint8 # 0-12
+    CollisionType = uint16 #Properties of collision. e.g. is it water? or what?
     triangle_count = uint16
-    __padding__ = Padding(1,b'\x00')
-    has_unknown4 = bool8
-    __padding__ = Padding(2)
+    
+    __padding__ = Padding(1,b'\x00') #Group flags, set them to 0 here
+    has_ColParameter = bool8 #Set 0x0001 to 1 if we have ColParameter values so the game doesn't ignore it
+    __padding__ = Padding(2)#Actual padding
     vertex_index_offset = uint32
-    unknown2_offset = uint32 # 0-18,20,21,23,24,27-31
-    unknown3_offset = uint32 # 0-27
-    unknown4_offset = uint32 # 0,1,2,3,4,8,255,6000,7500,7800,8000,8400,9000,10000,10300,12000,14000,17000,19000,20000,21000,22000,27500,30300
+    TerrainType_offset = uint32 # 0-18,20,21,23,24,27-31
+    unknown_offset = uint32 # 0-27
+    ColParameter_offset = uint32 # 0,1,2,3,4,8,255,6000,7500,7800,8000,8400,9000,10000,10300,12000,14000,17000,19000,20000,21000,22000,27500,30300
 
 
 class Triangle:
 
     def __init__(self):
         self.vertex_indices = None
-        self.unknown0 = 128
-        self.unknown1 = 0
-        self.unknown2 = 0
-        self.unknown3 = 0
-        self.unknown4 = None
+        self.ColType = 0
+        self.TerrainType = 0
+        self.unknown = 0
+        self.ColParameter = None
 
     @property
-    def has_unknown4(self):
-        return self.unknown4 is not None
+    def has_ColParameter(self):
+        return self.ColParameter is not None
 
 
 def pack(stream,vertices,triangles): #pack triangles into col file
@@ -80,16 +79,13 @@ def pack(stream,vertices,triangles): #pack triangles into col file
 
     for triangle in triangles:
         for group in groups: #for each triangle add to appropriate group
-            if triangle.unknown0 != group.unknown0: continue #break out of loop to next cycle
-            if triangle.unknown1 != group.unknown1: continue 
-            if triangle.has_unknown4 != group.has_unknown4: continue
+            if triangle.ColType != group.CollisionType: continue #break out of loop to next cycle
             group.triangles.append(triangle)
             break
         else: #if no group has been found
             group = Group() #create a new group
-            group.unknown0 = triangle.unknown0
-            group.unknown1 = triangle.unknown1
-            group.has_unknown4 = triangle.has_unknown4
+            group.CollisionType = triangle.ColType
+            group.has_ColParameter = triangle.has_ColParameter
             group.triangles = [triangle]
             groups.append(group) #add to list of groups
 
@@ -114,28 +110,27 @@ def pack(stream,vertices,triangles): #pack triangles into col file
             uint16.pack(stream,triangle.vertex_indices[2])
 
     for group in groups:
-        group.unknown2_offset = stream.tell()
+        group.TerrainType_offset = stream.tell()
         for triangle in group.triangles:
-            uint8.pack(stream,triangle.unknown2)
+            uint8.pack(stream,triangle.TerrainType)
 
     for group in groups:
-        group.unknown3_offset = stream.tell()
+        group.unknown_offset = stream.tell()
         for triangle in group.triangles:
-            uint8.pack(stream,triangle.unknown3)
+            uint8.pack(stream,triangle.unknown)
 
     for group in groups:
-        if not group.has_unknown4:
-            group.unknown4_offset = 0
+        if not group.has_ColParameter:
+            group.ColParameter_offset = 0
         else:
-            group.unknown4_offset = stream.tell()
+            group.ColParameter_offset = stream.tell()
             for triangle in group.triangles:
-                uint16.pack(stream,triangle.unknown4)
+                uint16.pack(stream,triangle.ColParameter)
 
     stream.seek(header.group_offset)
     for group in groups:
         Group.pack(stream,group)
         
-
 def unpack(stream):
     header = Header.unpack(stream)
 
@@ -148,8 +143,7 @@ def unpack(stream):
     for group in groups:
         group.triangles = [Triangle() for _ in range(group.triangle_count)]
         for triangle in group.triangles:
-            triangle.unknown0 = group.unknown0
-            triangle.unknown1 = group.unknown1
+            triangle.ColType = group.CollisionType
 
     for group in groups:
         stream.seek(group.vertex_index_offset)
@@ -157,20 +151,20 @@ def unpack(stream):
             triangle.vertex_indices = [uint16.unpack(stream) for _ in range(3)]
 
     for group in groups:
-        stream.seek(group.unknown2_offset)
+        stream.seek(group.TerrainType_offset)
         for triangle in group.triangles:
-            triangle.unknown2 = uint8.unpack(stream)
+            triangle.TerrainType = uint8.unpack(stream)
 
     for group in groups:
-        stream.seek(group.unknown3_offset)
+        stream.seek(group.unknown_offset)
         for triangle in group.triangles:
-            triangle.unknown3 = uint8.unpack(stream)
+            triangle.unknown = uint8.unpack(stream)
 
     for group in groups:
-        if not group.has_unknown4: continue
-        stream.seek(group.unknown4_offset)
+        if not group.has_ColParameter: continue
+        stream.seek(group.ColParameter_offset)
         for triangle in group.triangles:
-            triangle.unknown4 = uint16.unpack(stream)
+            triangle.ColParameter = uint16.unpack(stream)
 
     triangles = sum((group.triangles for group in groups),[])
 
@@ -215,34 +209,32 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
                 MyFace = bm.faces.new((BMeshVertexList[f.vertex_indices[0]],BMeshVertexList[f.vertex_indices[1]],BMeshVertexList[f.vertex_indices[2]]))
                 for i in range(0,len(obj.data.materials)): #Scan materials to find match
                     mat = obj.data.materials[i]
-                    if f.unknown0 == mat.ColEditor.U0 and f.unknown1 == mat.ColEditor.U1 and f.unknown2 == mat.ColEditor.U2 and f.unknown3 == mat.ColEditor.U3:#Equate unknowns
-                        Unknown4AreEqual = (f.unknown4 == mat.ColEditor.U4)
-                        Unknown4DontExist = f.unknown4 is None and mat.ColEditor.HasU4 is False #If the unknown4 doesn't exist we need to check for that case
-                        if Unknown4AreEqual or Unknown4DontExist:
+                    if f.ColType == mat.ColEditor.ColType and f.TerrainType == mat.ColEditor.TerrainType and f.unknown == mat.ColEditor.UnknownField:#Equate unknowns
+                        ColParameterAreEqual = (f.ColParameter == mat.ColEditor.ColParameterField)
+                        ColParameterDontExist = f.ColParameter is None and mat.ColEditor.HasColParameterField is False #If the ColParameter doesn't exist we need to check for that case
+                        if ColParameterAreEqual or ColParameterDontExist:
                             MyFace.material_index = i
                             break #We assigned our material 
                 else: #We did not find a material that matched
-                    print("new mat")
-                    MaterialName = str(f.unknown0)+","+str(f.unknown1)+","+str(f.unknown2)+","+str(f.unknown3)+","+str(f.unknown4)
+                    MaterialName = str(f.ColType) + "," + str(f.TerrainType) + "," + str(f.unknown) + "," + str(f.ColParameter)
                     mat = bpy.data.materials.new(name=MaterialName)
                     
-                    Magnitude = (f.unknown0**(2) + f.unknown1**(2) + f.unknown2**(2))**(0.5) * (256/256-f.unknown3) #Calculate rgb values
-                    Red = f.unknown0/Magnitude
-                    Green = f.unknown1/Magnitude
-                    Blue = f.unknown2/Magnitude
+                    random.seed(hash(MaterialName)) #Not actually random
+                    Red = random.random()
+                    Green = random.random()
+                    Blue = random.random()
                     mat.diffuse_color = (Red,Green,Blue)
                     
-                    mat.ColEditor.U0 = f.unknown0#Set collision values
-                    mat.ColEditor.U1 = f.unknown1
-                    mat.ColEditor.U2 = f.unknown2
-                    mat.ColEditor.U3 = f.unknown3
+                    mat.ColEditor.ColType = f.ColType#Set collision values
+                    mat.ColEditor.TerrainType = f.TerrainType
+                    mat.ColEditor.UnknownField = f.unknown
                     
-                    if f.unknown4 is not None:
-                        mat.ColEditor.HasU4 = True
-                        mat.ColEditor.U4 = f.unknown4
+                    if f.ColParameter is not None:
+                        mat.ColEditor.HasColParameterField = True
+                        mat.ColEditor.ColParameterField = f.ColParameter
                     else:
-                        mat.ColEditor.HasU4 = False
-                        mat.ColEditor.U4 = 0 
+                        mat.ColEditor.HasColParameterField = False
+                        mat.ColEditor.ColParameterField = 0 
                     obj.data.materials.append(mat) #add material to our object
                     MyFace.material_index = len(obj.data.materials) - 1 #Since material was just added it will be the last index
             except:
@@ -295,12 +287,11 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
                 slot = Obj.material_slots[Face.material_index]
                 mat = slot.material.ColEditor
                 if mat is not None:
-                    MyTriangle.unknown0 = mat.U0
-                    MyTriangle.unknown1 = mat.U1
-                    MyTriangle.unknown2 = mat.U2
-                    MyTriangle.unknown3 = mat.U3
-                    if mat.HasU4 == True:
-                        MyTriangle.unknown4 = mat.U4
+                    MyTriangle.ColType = mat.ColType
+                    MyTriangle.TerrainType = mat.TerrainType
+                    MyTriangle.unknown = mat.UnknownField
+                    if mat.HasColParameterField == True:
+                        MyTriangle.ColParameter = mat.ColParameterField
                 Triangles.append(MyTriangle) #add triangles
             bm.free()
             del bm
@@ -311,12 +302,11 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         return {'FINISHED'}            # this lets blender know the operator finished successfully.
 
 class CollisionProperties(PropertyGroup): #This defines the UI elements
-    U0 = IntProperty(name = "Unknown 0",default=0, min=0, max=255) #Here we put parameters for the UI elements and point to the Update functions
-    U1 = IntProperty(name = "Unknown 1",default=0, min=0, max=255)
-    U2 = IntProperty(name = "Unknown 2",default=0, min=0, max=255)
-    U3 = IntProperty(name = "Unknown 3",default=0, min=0, max=255)#I probably should have made these an array
-    HasU4 = BoolProperty(name="Has Unknown 4", default=False)
-    U4 = IntProperty(name = "Unknown 4",default=0, min=0, max=65535)
+    ColType = IntProperty(name = "Collision type",default=0, min=0, max=65535) #Here we put parameters for the UI elements and point to the Update functions
+    TerrainType = IntProperty(name = "Sound",default=0, min=0, max=255)
+    UnknownField = IntProperty(name = "Unknown",default=0, min=0, max=255)#I probably should have made these an array
+    HasColParameterField = BoolProperty(name="Has Parameter", default=False)
+    ColParameterField = IntProperty(name = "Parameter",default=0, min=0, max=65535)
 
 class CollisionPanel(Panel): #This panel houses the UI elements defined in the CollisionProperties
     bl_label = "Edit Collision Values"
@@ -333,15 +323,14 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
     def draw(self, context):
         mat = context.material.ColEditor
         column1 = self.layout.column(align = True)
-        column1.prop(mat,"U0")
-        column1.prop(mat,"U1")
-        column1.prop(mat,"U2")
-        column1.prop(mat,"U3")
+        column1.prop(mat,"ColType")
+        column1.prop(mat,"TerrainType")
+        column1.prop(mat,"UnknownField")
         
-        column1.prop(mat,"HasU4")
+        column1.prop(mat,"HasColParameterField")
         column2 = self.layout.column(align = True)
-        column2.prop(mat,"U4")
-        column2.enabled = mat.HasU4 #must have "Has Unknown4" checked
+        column2.prop(mat,"ColParameterField")
+        column2.enabled = mat.HasColParameterField #must have "Has ColParameter" checked
         
        
 def check_material(mat):
