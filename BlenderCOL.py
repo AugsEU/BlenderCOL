@@ -216,7 +216,7 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
                 for i in range(0,len(obj.data.materials)): #Scan materials to find match
                     mat = obj.data.materials[i]
                     if f.unknown0 == mat.ColEditor.U0 and f.unknown1 == mat.ColEditor.U1 and f.unknown2 == mat.ColEditor.U2 and f.unknown3 == mat.ColEditor.U3:#Equate unknowns
-                        Unknown4AreEqual = f.unknown4 is mat.ColEditor.U4
+                        Unknown4AreEqual = (f.unknown4 == mat.ColEditor.U4)
                         Unknown4DontExist = f.unknown4 is None and mat.ColEditor.HasU4 is False #If the unknown4 doesn't exist we need to check for that case
                         if Unknown4AreEqual or Unknown4DontExist:
                             MyFace.material_index = i
