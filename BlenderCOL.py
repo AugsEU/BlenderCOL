@@ -73,7 +73,16 @@ class Triangle:
     def has_ColParameter(self):
         return self.ColParameter is not None
 
-
+class BlenderCollisionGroup:
+    MaterialList = [] #stores material indicies
+    CollisionType = uint16
+    GroupFlags = uint16
+    
+    def __init__(self,MatList):
+        self.MaterialList = MatList
+        
+        
+        
 def pack(stream,vertices,triangles): #pack triangles into col file
     groups = []
 
@@ -332,7 +341,54 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         column2.prop(mat,"ColParameterField")
         column2.enabled = mat.HasColParameterField #must have "Has ColParameter" checked
         
-       
+class GroupsPanel(Panel):
+    bl_label = "Edit Collision Groups"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "object"
+    
+    def draw(self, context):
+        layout = self.layout
+
+        mat = context.material
+        ob = context.object
+        slot = context.material_slot
+        space = context.space_data
+
+        if ob:
+            row = layout.row()
+
+            row.template_list("UI_UL_list", "", ob, "material_slots", ob, "active_material_index", rows=1)
+
+            col = row.column(align=True)
+            col.operator("colgroup.add", icon='ZOOMIN', text="")
+            col.operator("colgroup.remove", icon='ZOOMOUT', text="")
+        
+  
+class AddGroup(bpy.types.Operator):
+    bl_idname = "colgroup.add"
+    bl_label = "Add group"
+
+    def execute(self, context):
+        return {'FINISHED'}
+  
+class RemoveGroup(bpy.types.Operator):
+    bl_idname = "colgroup.remove"
+    bl_label = "Remove group"
+
+    def execute(self, context):
+        return {'FINISHED'}
+        
+class CalculateGroups(bpy.types.Operator):
+    bl_idname = "groups.calculate"
+    bl_label = "Calculate groups"
+
+    def execute(self, context):
+        for mat in bpy.data.materials:
+            print(mat.name)
+        return {'FINISHED'}
+
+   
 def check_material(mat):
     if mat is not None:
         if mat.use_nodes:
@@ -342,7 +398,8 @@ def check_material(mat):
         return True
     return False
     
-classes = (ExportCOL,ImportCOL, CollisionPanel,CollisionProperties) #list of classes to register/unregister  
+
+classes = (ExportCOL,ImportCOL, CollisionPanel,CollisionProperties,GroupsPanel,CalculateGroups,AddGroup,RemoveGroup) #list of classes to register/unregister  
 def register():
     for i in classes:
         register_class(i)
