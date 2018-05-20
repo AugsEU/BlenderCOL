@@ -48,31 +48,30 @@ class Vertex(Struct):
 
 
 class Group(Struct):
-    unknown0 = uint8 # 0,1,2,4,6,7,8,64,128,129,132,135,160,192, bitfield?
-    unknown1 = uint8 # 0-12
+    CollisionType = uint16 #Properties of collision. e.g. is it water? or what?
     triangle_count = uint16
-    __padding__ = Padding(1,b'\x00')
-    has_unknown4 = bool8
-    __padding__ = Padding(2)
+    
+    __padding__ = Padding(1,b'\x00') #Group flags, set them to 0 here
+    has_ColParameter = bool8 #Set 0x0001 to 1 if we have ColParameter values so the game doesn't ignore it
+    __padding__ = Padding(2)#Actual padding
     vertex_index_offset = uint32
-    unknown2_offset = uint32 # 0-18,20,21,23,24,27-31
-    unknown3_offset = uint32 # 0-27
-    unknown4_offset = uint32 # 0,1,2,3,4,8,255,6000,7500,7800,8000,8400,9000,10000,10300,12000,14000,17000,19000,20000,21000,22000,27500,30300
+    TerrainType_offset = uint32 # 0-18,20,21,23,24,27-31
+    unknown_offset = uint32 # 0-27
+    ColParameter_offset = uint32 # 0,1,2,3,4,8,255,6000,7500,7800,8000,8400,9000,10000,10300,12000,14000,17000,19000,20000,21000,22000,27500,30300
 
 
 class Triangle:
 
     def __init__(self):
         self.vertex_indices = None
-        self.unknown0 = 128
-        self.unknown1 = 0
-        self.unknown2 = 0
-        self.unknown3 = 0
-        self.unknown4 = None
+        self.ColType = 0
+        self.TerrainType = 0
+        self.unknown = 0
+        self.ColParameter = None
 
     @property
-    def has_unknown4(self):
-        return self.unknown4 is not None
+    def has_ColParameter(self):
+        return self.ColParameter is not None
 
 
 def pack(stream,vertices,triangles): #pack triangles into col file
@@ -80,16 +79,13 @@ def pack(stream,vertices,triangles): #pack triangles into col file
 
     for triangle in triangles:
         for group in groups: #for each triangle add to appropriate group
-            if triangle.unknown0 != group.unknown0: continue #break out of loop to next cycle
-            if triangle.unknown1 != group.unknown1: continue 
-            if triangle.has_unknown4 != group.has_unknown4: continue
+            if triangle.ColType != group.CollisionType: continue #break out of loop to next cycle
             group.triangles.append(triangle)
             break
         else: #if no group has been found
             group = Group() #create a new group
-            group.unknown0 = triangle.unknown0
-            group.unknown1 = triangle.unknown1
-            group.has_unknown4 = triangle.has_unknown4
+            group.CollisionType = triangle.ColType
+            group.has_ColParameter = triangle.has_ColParameter
             group.triangles = [triangle]
             groups.append(group) #add to list of groups
 
@@ -114,28 +110,27 @@ def pack(stream,vertices,triangles): #pack triangles into col file
             uint16.pack(stream,triangle.vertex_indices[2])
 
     for group in groups:
-        group.unknown2_offset = stream.tell()
+        group.TerrainType_offset = stream.tell()
         for triangle in group.triangles:
-            uint8.pack(stream,triangle.unknown2)
+            uint8.pack(stream,triangle.TerrainType)
 
     for group in groups:
-        group.unknown3_offset = stream.tell()
+        group.unknown_offset = stream.tell()
         for triangle in group.triangles:
-            uint8.pack(stream,triangle.unknown3)
+            uint8.pack(stream,triangle.unknown)
 
     for group in groups:
-        if not group.has_unknown4:
-            group.unknown4_offset = 0
+        if not group.has_ColParameter:
+            group.ColParameter_offset = 0
         else:
-            group.unknown4_offset = stream.tell()
+            group.ColParameter_offset = stream.tell()
             for triangle in group.triangles:
-                uint16.pack(stream,triangle.unknown4)
+                uint16.pack(stream,triangle.ColParameter)
 
     stream.seek(header.group_offset)
     for group in groups:
         Group.pack(stream,group)
         
-
 def unpack(stream):
     header = Header.unpack(stream)
 
@@ -148,8 +143,7 @@ def unpack(stream):
     for group in groups:
         group.triangles = [Triangle() for _ in range(group.triangle_count)]
         for triangle in group.triangles:
-            triangle.unknown0 = group.unknown0
-            triangle.unknown1 = group.unknown1
+            triangle.ColType = group.CollisionType
 
     for group in groups:
         stream.seek(group.vertex_index_offset)
@@ -157,24 +151,25 @@ def unpack(stream):
             triangle.vertex_indices = [uint16.unpack(stream) for _ in range(3)]
 
     for group in groups:
-        stream.seek(group.unknown2_offset)
+        stream.seek(group.TerrainType_offset)
         for triangle in group.triangles:
-            triangle.unknown2 = uint8.unpack(stream)
+            triangle.TerrainType = uint8.unpack(stream)
 
     for group in groups:
-        stream.seek(group.unknown3_offset)
+        stream.seek(group.unknown_offset)
         for triangle in group.triangles:
-            triangle.unknown3 = uint8.unpack(stream)
+            triangle.unknown = uint8.unpack(stream)
 
     for group in groups:
-        if not group.has_unknown4: continue
-        stream.seek(group.unknown4_offset)
+        if not group.has_ColParameter: continue
+        stream.seek(group.ColParameter_offset)
         for triangle in group.triangles:
-            triangle.unknown4 = uint16.unpack(stream)
+            triangle.ColParameter = uint16.unpack(stream)
 
     triangles = sum((group.triangles for group in groups),[])
 
     return vertices,triangles
+
 
 class ImportCOL(Operator, ExportHelper): #Operator that exports the collision model into .col file
     """Import a COL file"""
@@ -204,12 +199,11 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
 
         mesh = bpy.context.object.data
         bm = bmesh.new()
-        U0Layer = bm.faces.layers.int.new(CollisionLayer.Unknown0.value) #Create new data layers
-        U1Layer = bm.faces.layers.int.new(CollisionLayer.Unknown1.value)
-        U2Layer = bm.faces.layers.int.new(CollisionLayer.Unknown2.value)
-        U3Layer = bm.faces.layers.int.new(CollisionLayer.Unknown3.value)
-        HasU4Layer = bm.faces.layers.int.new(CollisionLayer.HasUnknown4.value)
-        U4Layer = bm.faces.layers.int.new(CollisionLayer.Unknown4.value)
+        ColTypeLayer = bm.faces.layers.int.new(CollisionLayer.ColType.value) #Create new data layers
+        TerrainTypeLayer = bm.faces.layers.int.new(CollisionLayer.TerrainType.value)
+        UnknownFieldLayer = bm.faces.layers.int.new(CollisionLayer.Unknown.value)
+        HasColParameterFieldLayer = bm.faces.layers.int.new(CollisionLayer.HasColParameter.value)
+        ColParameterFieldLayer = bm.faces.layers.int.new(CollisionLayer.ColParameter.value)
         
         BMeshVertexList = []
         
@@ -220,13 +214,12 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         for f in Triangles:
             try: #Try and catch to avoid exception on duplicate triangles. Dodgy...
                 MyFace = bm.faces.new((BMeshVertexList[f.vertex_indices[0]],BMeshVertexList[f.vertex_indices[1]],BMeshVertexList[f.vertex_indices[2]]))
-                MyFace[U0Layer] = f.unknown0
-                MyFace[U1Layer] = f.unknown1
-                MyFace[U2Layer] = f.unknown2
-                MyFace[U3Layer] = f.unknown3
-                MyFace[U4Layer] = f.unknown4
-                if MyFace[U4Layer] is not None:
-                    MyFace[HasU4Layer] = True
+                MyFace[ColTypeLayer] = f.ColType
+                MyFace[TerrainTypeLayer] = f.TerrainType
+                MyFace[UnknownFieldLayer] = f.Unknown
+                MyFace[ColParameterFieldLayer] = f.ColParameter
+                if MyFace[ColParameterFieldLayer] is not None:
+                    MyFace[HasColParameterFieldLayer] = True
             except:
                 continue
         
@@ -267,12 +260,11 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         
         bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method=0, ngon_method=0) #triangulate bmesh
         #triangulate_mesh(Mesh)
-        U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value)
-        U1Layer = bm.faces.layers.int.get(CollisionLayer.Unknown1.value)
-        U2Layer = bm.faces.layers.int.get(CollisionLayer.Unknown2.value)
-        U3Layer = bm.faces.layers.int.get(CollisionLayer.Unknown3.value)
-        HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
-        U4Layer = bm.faces.layers.int.get(CollisionLayer.Unknown4.value)
+        ColTypeLayer = bm.faces.layers.int.get(CollisionLayer.ColType.value)
+        TerrainTypeLayer = bm.faces.layers.int.get(CollisionLayer.TerrainType.value)
+        UnknownFieldLayer = bm.faces.layers.int.get(CollisionLayer.Unknown.value)
+        HasColParameterFieldLayer = bm.faces.layers.int.get(CollisionLayer.HasColParameter.value)
+        ColParameterFieldLayer = bm.faces.layers.int.get(CollisionLayer.ColParameter.value)
 
         
         for Vert in bm.verts:
@@ -281,13 +273,12 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         for Face in bm.faces:
             MyTriangle = Triangle()
             MyTriangle.vertex_indices = [Face.verts[0].index,Face.verts[1].index,Face.verts[2].index] #add three vertex indicies
-            if U0Layer is not None:
-                MyTriangle.unknown0 = Face[U0Layer]
-                MyTriangle.unknown1 = Face[U1Layer]
-                MyTriangle.unknown2 = Face[U2Layer]
-                MyTriangle.unknown3 = Face[U3Layer]
-                if Face[HasU4Layer] != 0:
-                    MyTriangle.unknown4 = Face[U4Layer]
+            if ColTypeLayer is not None:
+                MyTriangle.ColType = Face[ColTypeLayer]
+                MyTriangle.TerrainType = Face[TerrainTypeLayer]
+                MyTriangle.Unknown = Face[UnknownFieldLayer]
+                if Face[HasColParameterFieldLayer] != 0:
+                    MyTriangle.ColParameter = Face[ColParameterFieldLayer]
             Triangles.append(MyTriangle) #add triangles
         
         ColStream = open(self.filepath,'wb')
@@ -295,45 +286,40 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         return {'FINISHED'}            # this lets blender know the operator finished successfully.
         
 class CollisionLayer(Enum): #This stores the data layer names that each Unknown will be on.
-    Unknown0 = "CollisionEditorUnknown0"
-    Unknown1 = "CollisionEditorUnknown1"
-    Unknown2 = "CollisionEditorUnknown2" #For example Unknown2 is stored on a data layer called "CollisionEditorUnknown2"
-    Unknown3 = "CollisionEditorUnknown3" 
-    HasUnknown4 = "CollisionEditorHasUnknown4" #This layer is an integer because boolean layers don't exist
-    Unknown4 = "CollisionEditorUnknown4"
+    ColType = "CollisionEditorColType"
+    TerrainType = "CollisionEditorTerrainType" #For example TerrainType is stored on a data layer called "CollisionEditorTerrainType"
+    Unknown = "CollisionEditorUnknown" 
+    HasColParameter = "CollisionEditorHasColParameter" #This layer is an integer because boolean layers don't exist
+    ColParameter = "CollisionEditorColParameter"
         
-def U0Update(self, context): #These functions are called when the UI elements change
-    ChangeValuesOfSelection(CollisionLayer.Unknown0.value,bpy.context.scene.ColEditor.U0)
+def ColTypeUpdate(self, context): #These functions are called when the UI elements change
+    ChangeValuesOfSelection(CollisionLayer.ColType.value,bpy.context.scene.ColEditor.ColType)
     return
 
-def U1Update(self, context): #It would be nice to call ChangeValuesOfSelection directly but Update Functions can't have parameters as far as I am aware
-    ChangeValuesOfSelection(CollisionLayer.Unknown1.value,bpy.context.scene.ColEditor.U1)
-    return
 
-def U2Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown2.value,bpy.context.scene.ColEditor.U2)
+def TerrainTypeUpdate(self, context):
+    ChangeValuesOfSelection(CollisionLayer.TerrainType.value,bpy.context.scene.ColEditor.TerrainType)
     return
     
-def U3Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown3.value,bpy.context.scene.ColEditor.U3)
+def UnknownFieldUpdate(self, context):
+    ChangeValuesOfSelection(CollisionLayer.Unknown.value,bpy.context.scene.ColEditor.UnknownField)
     return
     
-def HasU4Update(self, context):
-    ToSet = 1 if bpy.context.scene.ColEditor.HasU4 else 0 #In this case a TRUE value is represented by a 1 and FALSE by 0
-    ChangeValuesOfSelection(CollisionLayer.HasUnknown4.value,ToSet)
+def HasColParameterFieldUpdate(self, context):
+    ToSet = 1 if bpy.context.scene.ColEditor.HasColParameterField else 0 #In this case a TRUE value is represented by a 1 and FALSE by 0
+    ChangeValuesOfSelection(CollisionLayer.HasColParameter.value,ToSet)
     return
 
-def U4Update(self, context):
-    ChangeValuesOfSelection(CollisionLayer.Unknown4.value,bpy.context.scene.ColEditor.U4)
+def ColParameterFieldUpdate(self, context):
+    ChangeValuesOfSelection(CollisionLayer.ColParameter.value,bpy.context.scene.ColEditor.ColParameterField)
     return
    
 class CollisionProperties(PropertyGroup): #This defines the UI elements
-    U0 = IntProperty(name = "Unknown 0",default=0, min=0, max=255, update = U0Update) #Here we put parameters for the UI elements and point to the Update functions
-    U1 = IntProperty(name = "Unknown 1",default=0, min=0, max=255, update = U1Update)
-    U2 = IntProperty(name = "Unknown 2",default=0, min=0, max=255, update = U2Update)
-    U3 = IntProperty(name = "Unknown 3",default=0, min=0, max=255, update = U3Update)#I probably should have made these an array
-    HasU4 = BoolProperty(name="Has Unknown 4", default=False, update = HasU4Update)
-    U4 = IntProperty(name = "Unknown 4",default=0, min=0, max=65535, update = U4Update)
+    ColType = IntProperty(name = "Collision type",default=0, min=0, max=65535,update = ColTypeUpdate) #Here we put parameters for the UI elements and point to the Update functions
+    TerrainType = IntProperty(name = "Sound",default=0, min=0, max=255,update = TerrainTypeUpdate)
+    UnknownField = IntProperty(name = "Unknown",default=0, min=0, max=255,update =  UnknownFieldUpdate)#I probably should have made these an array
+    HasColParameterField = BoolProperty(name="Has Parameter", default=False,update = HasColParameterFieldUpdate)
+    ColParameterField = IntProperty(name = "Parameter",default=0, min=0, max=65535,update = ColParameterFieldUpdate)
 
 class CollisionPanel(Panel): #This panel houses the UI elements defined in the CollisionProperties
     bl_label = "Edit Collision Values"
@@ -351,8 +337,8 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         if(bpy.context.object.mode == 'EDIT'):
             obj = bpy.context.scene.objects.active #This method might be quite taxing
             bm = bmesh.from_edit_mesh(obj.data)
-            U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
-            if U0Layer is not None: #If the model has collision values
+            ColTypeLayer = bm.faces.layers.int.get(CollisionLayer.ColType.value) #Check if this layer exists
+            if ColTypeLayer is not None: #If the model has collision values
                 EnableColumns = True #Then we enabled editing the values
             del bm
             del obj
@@ -365,16 +351,15 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         
         
         column1 = self.layout.column(align = True)
-        column1.prop(bpy.context.scene.ColEditor, "U0")
-        column1.prop(bpy.context.scene.ColEditor, "U1") 
-        column1.prop(bpy.context.scene.ColEditor, "U2")
-        column1.prop(bpy.context.scene.ColEditor, "U3")
+        column1.prop(bpy.context.scene.ColEditor, "ColType")
+        column1.prop(bpy.context.scene.ColEditor, "TerrainType")
+        column1.prop(bpy.context.scene.ColEditor, "UnknownField")
         column1.enabled = EnableColumns
         
-        column1.prop(bpy.context.scene.ColEditor, "HasU4")
+        column1.prop(bpy.context.scene.ColEditor, "HasColParameterField")
         column2 = self.layout.column(align = True)
-        column2.prop(bpy.context.scene.ColEditor, "U4")
-        column2.enabled = bpy.context.scene.ColEditor.HasU4 and EnableColumns #Collision values must exist AND we must have "Has Unknown4" checked
+        column2.prop(bpy.context.scene.ColEditor, "ColParameterField")
+        column2.enabled = bpy.context.scene.ColEditor.HasColParameterField and EnableColumns #Collision values must exist AND we must have "Has ColParameter" checked
         
         
 class InitialValues(Operator): #This creates the data layers that store the collision values
@@ -385,12 +370,11 @@ class InitialValues(Operator): #This creates the data layers that store the coll
         obj = bpy.context.scene.objects.active
         bm = bmesh.from_edit_mesh(obj.data)
         
-        bm.faces.layers.int.new(CollisionLayer.Unknown0.value) #Uses Enum to get names
-        bm.faces.layers.int.new(CollisionLayer.Unknown1.value)
-        bm.faces.layers.int.new(CollisionLayer.Unknown2.value)
-        bm.faces.layers.int.new(CollisionLayer.Unknown3.value)
-        bm.faces.layers.int.new(CollisionLayer.HasUnknown4.value)
-        bm.faces.layers.int.new(CollisionLayer.Unknown4.value)
+        bm.faces.layers.int.new(CollisionLayer.ColType.value) #Uses Enum to get names
+        bm.faces.layers.int.new(CollisionLayer.TerrainType.value)
+        bm.faces.layers.int.new(CollisionLayer.Unknown.value)
+        bm.faces.layers.int.new(CollisionLayer.HasColParameter.value)
+        bm.faces.layers.int.new(CollisionLayer.ColParameter.value)
         return{'FINISHED'}        
 
 def ChangeValuesOfSelection(ValueToChange,ValueToSet):
@@ -403,9 +387,9 @@ def ChangeValuesOfSelection(ValueToChange,ValueToSet):
     for face in bm.faces:
         if(face.select == True):
             face[my_id] = ValueToSet
-            if ValueToChange == CollisionLayer.Unknown4.value: #If you somehow edit Unknown4 when HasUnknown4 is off, like with a group selection, make sure to turn it on
-                HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
-                face[HasU4Layer] = 1
+            if ValueToChange == CollisionLayer.ColParameter.value: #If you somehow edit ColParameter when HasColParameter is off, like with a group selection, make sure to turn it on
+                HasColParameterFieldLayer = bm.faces.layers.int.get(CollisionLayer.HasColParameter.value)
+                face[HasColParameterFieldLayer] = 1
                 
 
     bmesh.update_edit_mesh(obj.data, False,False) #Update mesh with new values    
@@ -415,26 +399,23 @@ def UpdateUI(scene):
     obj = scene.objects.active
     if(obj.mode == 'EDIT' and obj.type == 'MESH'):
             bm = bmesh.from_edit_mesh(obj.data)
-            U0Layer = bm.faces.layers.int.get(CollisionLayer.Unknown0.value) #Check if this layer exists
-            if U0Layer is not None: #If the model has collision values
+            ColTypeLayer = bm.faces.layers.int.get(CollisionLayer.ColType.value) #Check if this layer exists
+            if ColTypeLayer is not None: #If the model has collision values
                 face = bm.faces.active
                 if face is not None:
-                    bpy.context.scene.ColEditor["U0"] = face[U0Layer] #This is why they should have been an array
+                    bpy.context.scene.ColEditor["ColType"] = face[ColTypeLayer] #This is why they should have been an array
                     
-                    U1Layer = bm.faces.layers.int.get(CollisionLayer.Unknown1.value) #Get name of data layer
-                    bpy.context.scene.ColEditor["U1"] = face[U1Layer] #Set UI element to value in selected face
+                    TerrainTypeLayer = bm.faces.layers.int.get(CollisionLayer.TerrainType.value)
+                    bpy.context.scene.ColEditor["TerrainType"] = face[TerrainTypeLayer] #We call it like this so that we don't call the update function. Otherwise selecting multiple faces would set them all equal
                     
-                    U2Layer = bm.faces.layers.int.get(CollisionLayer.Unknown2.value)
-                    bpy.context.scene.ColEditor["U2"] = face[U2Layer] #We call it like this so that we don't call the update function. Otherwise selecting multiple faces would set them all equal
+                    UnknownFieldLayer = bm.faces.layers.int.get(CollisionLayer.Unknown.value)
+                    bpy.context.scene.ColEditor["UnknownField"] = face[UnknownFieldLayer] #We choose index 0 but it doesn't really matter. Unfortunetly you can't get int properties to display "--" used, for example, when there are different ColType values across the selected faces
                     
-                    U3Layer = bm.faces.layers.int.get(CollisionLayer.Unknown3.value)
-                    bpy.context.scene.ColEditor["U3"] = face[U3Layer] #We choose index 0 but it doesn't really matter. Unfortunetly you can't get int properties to display "--" used, for example, when there are different unknown0 values across the selected faces
+                    HasColParameterFieldLayer = bm.faces.layers.int.get(CollisionLayer.HasColParameter.value)
+                    bpy.context.scene.ColEditor["HasColParameterField"] = False if face[HasColParameterFieldLayer]  == 0 else True 
                     
-                    HasU4Layer = bm.faces.layers.int.get(CollisionLayer.HasUnknown4.value)
-                    bpy.context.scene.ColEditor["HasU4"] = False if face[HasU4Layer]  == 0 else True 
-                    
-                    U4Layer = bm.faces.layers.int.get(CollisionLayer.Unknown4.value)
-                    bpy.context.scene.ColEditor["U4"] = face[U4Layer]
+                    ColParameterFieldLayer = bm.faces.layers.int.get(CollisionLayer.ColParameter.value)
+                    bpy.context.scene.ColEditor["ColParameterField"] = face[ColParameterFieldLayer]
     return None    
     
     
