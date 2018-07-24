@@ -271,7 +271,7 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
         Triangles = [] #List of triangles, each containing indicies of verticies
         IndexOffset = 0 #Since each object starts their vertex indicies at 0, we need to shift these indicies once we add elements to the vertex list from various objects
         for Obj in bpy.context.scene.objects: #for all objects
-            Obj.mode_set(mode = 'OBJECT') #Set mode to be object mode
+            bpy.ops.object.mode_set(mode = 'OBJECT')#Set mode to be object mode
             if Obj.type != 'MESH':
                 continue
             bm = bmesh.new() #Define new bmesh
