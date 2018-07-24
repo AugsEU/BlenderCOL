@@ -189,7 +189,7 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
 
             
         mesh = bpy.data.meshes.new("mesh")  # add a new mesh
-        obj = bpy.data.objects.new("MyObject", mesh)  # add a new object using the mesh
+        obj = bpy.data.objects.new("CollisionObj", mesh)  # add a new object using the mesh
 
         scene = bpy.context.scene
         scene.objects.link(obj)  # put the object into the scene (link)
@@ -267,11 +267,13 @@ class ExportCOL(Operator, ExportHelper): #Operator that exports the collision mo
     )
 	
     def execute(self, context):        # execute() is called by blender when running the operator.
-        bpy.ops.object.mode_set (mode = 'OBJECT') #Set mode to be object mode
         VertexList = [] #Store a list of verticies
         Triangles = [] #List of triangles, each containing indicies of verticies
         IndexOffset = 0 #Since each object starts their vertex indicies at 0, we need to shift these indicies once we add elements to the vertex list from various objects
         for Obj in bpy.context.scene.objects: #for all objects
+            Obj.mode_set(mode = 'OBJECT') #Set mode to be object mode
+            if Obj.type != 'MESH':
+                continue
             bm = bmesh.new() #Define new bmesh
             MyMesh = Obj.to_mesh(context.scene, True, 'PREVIEW')#make a copy of the object we can modify freely
             bm.from_mesh(MyMesh) #Add the above copy into the bmesh
