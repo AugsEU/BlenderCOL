@@ -26,6 +26,8 @@ from bpy.props import (BoolProperty,
     PointerProperty,
     )
 
+
+    
     
 class Header(Struct):
     vertex_count = uint32
@@ -71,39 +73,7 @@ class Triangle:
     def has_ColParameter(self):
         return self.ColParameter is not None
 
-class BlenderCollisionGroup:
-    MaterialList = [] #stores material indicies
-    CollisionType = uint16
-    GroupFlags = uint16
-    
-    def __init__(self,MatList,ColType):
-        self.MaterialList = MatList
-        self.CollisionType=ColType
-        
-    def ValidateGroup(): #Removes any materials that shouldn't be in the list
-        for mat in self.MaterialList:
-            if mat is None:
-                self.MaterialList.remove(mat)
-                continue
-            if mat.ColEditor is None: #If material doesn't have collision values remove it
-                self.MaterialList.remove(mat)
-                continue
-            if mat.ColEditor.ColType != self.CollisionType: #We need to do this after the above statement to avoid an exception
-                self.MaterialList.remove(mat)
-    
-    def AddMaterial(Mat):
-        if mat.ColEditor.ColType == self.CollisionType:
-            self.MaterialList.append(Mat)
-            return "Material added"
-        return "Not the right collision type"
-        
-    def RemoveMaterial(Mat):
-        if Mat in self.MaterialList:
-            MaterialList.remove(Mat)
-         
-        
-        
-        
+
 def pack(stream,vertices,triangles): #pack triangles into col file
     groups = []
 
@@ -361,7 +331,8 @@ class CollisionPanel(Panel): #This panel houses the UI elements defined in the C
         column2 = self.layout.column(align = True)
         column2.prop(mat,"ColParameterField")
         column2.enabled = mat.HasColParameterField #must have "Has ColParameter" checked
-     
+        
+       
 def check_material(mat):
     if mat is not None:
         if mat.use_nodes:
@@ -370,113 +341,14 @@ def check_material(mat):
             return False
         return True
     return False
-     
-class MESH_UL_GroupsList(bpy.types.UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index, flt_flag):
-        self.use_filter_show = True
-
-        if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            split = layout.split(0.1)
-            split.prop(item, "Name", text="", emboss=False)
-            split = split.split(0.3)
-            split.prop(item, "ColType", text="", emboss=False)
-
-        elif self.layout_type in {'GRID'}:
-            pass
-
-    # Called once to filter/reorder items.
-    def filter_items(self, context, data, propname):#magic
-
-        col = getattr(data, propname)
-        filter_name = self.filter_name.lower()
-
-        flt_flags = [self.bitflag_filter_item if any(
-                filter_name in filter_set for filter_set in (
-                    str(i), item.Name.lower()
-                )
-            )
-            else 0 for i, item in enumerate(col, 1)
-        ]
-
-        if self.use_filter_sort_alpha:
-            flt_neworder = [x[1] for x in sorted(
-                    zip(
-                        [x[0] for x in sorted(enumerate(col), key=lambda x: x[1].Name)],
-                        range(len(col))
-                    )
-                )
-            ]
-        else:
-            flt_neworder = []
-
-        return flt_flags, flt_neworder
-   
-
-def ListClick(self, context):
-    print(bpy.context.scene.CollisionGroupList[0].Name)
-   
-class GroupsPanel(Panel):
-    bl_label = "Edit Collision Groups"
-    bl_space_type = "PROPERTIES"
-    bl_region_type = "WINDOW"
-    bl_context = "object"
     
-    def draw(self, context):
-        layout = self.layout
-        ob = context.object
-        if ob:
-            row = layout.row()
-            row.template_list("MESH_UL_GroupsList", "", context.scene, "CollisionGroupList", context.scene, "CollisionGroup_idx")
-
-            col = row.column(align=True)
-            col.operator("colgroup.add", icon='ZOOMIN', text="")
-            col.operator("colgroup.remove", icon='ZOOMOUT', text="")
-
-            if len(context.scene.CollisionGroupList) > context.scene.CollisionGroup_idx:
-                print(SpecialGroupList[context.scene.CollisionGroup_idx])
-        
-        
-  
-      
-class GroupsCollection(bpy.types.PropertyGroup):
-    Name = bpy.props.StringProperty()
-    ColType = bpy.props.IntProperty()
-    ColGroup = BlenderCollisionGroup([],0)
-  
-class AddGroup(bpy.types.Operator):
-    bl_idname = "colgroup.add"
-    bl_label = "Add group"
-
-    def execute(self, context):
-        NewBlenderGroup = BlenderCollisionGroup([],0)
-        item = bpy.context.scene.CollisionGroupList.add()
-        item.Name = "Untitled"
-        item.ColType = 0
-        global SpecialGroupList
-        SpecialGroupList.append(NewBlenderGroup)
-        return {'FINISHED'}
-  
-class RemoveGroup(bpy.types.Operator):
-    bl_idname = "colgroup.remove"
-    bl_label = "Remove group"
-
-    def execute(self, context):
-        bpy.context.scene.CollisionGroupList.remove(bpy.context.scene.CollisionGroup_idx)
-        global SpecialGroupList
-        SpecialGroupList.pop(bpy.context.scene.CollisionGroup_idx)
-        return {'FINISHED'}
-        
-
-classes = (ExportCOL,ImportCOL, CollisionPanel,CollisionProperties,GroupsPanel,AddGroup,RemoveGroup,GroupsCollection,MESH_UL_GroupsList) #list of classes to register/unregister  
+classes = (ExportCOL,ImportCOL, CollisionPanel,CollisionProperties) #list of classes to register/unregister  
 def register():
     for i in classes:
         register_class(i)
     bpy.types.Material.ColEditor = PointerProperty(type=CollisionProperties) #store in the scene
     bpy.types.INFO_MT_file_export.append(menu_export) #Add to export menu
     bpy.types.INFO_MT_file_import.append(menu_import) #Add to import menu
-    
-    Scene.CollisionGroupList = bpy.props.CollectionProperty(type=GroupsCollection)
-    Scene.CollisionGroup_idx = bpy.props.IntProperty(default=0)
     
 
 def menu_export(self, context):
@@ -490,8 +362,6 @@ def unregister():
         unregister_class(i)
     bpy.types.INFO_MT_file_export.remove(menu_export)
     bpy.types.INFO_MT_file_import.remove(menu_import)
-    del Scene.CollisionGroupList
-    del Scene.CollisionGroup_idx
 
     
 
