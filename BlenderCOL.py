@@ -67,7 +67,7 @@ class Triangle:
         self.ColType = 0
         self.TerrainType = 0
         self.unknown = 0
-        self.ColParameter = 0
+        self.ColParameter = None
 
     @property
     def has_ColParameter(self):
@@ -125,7 +125,10 @@ def pack(stream,vertices,triangles): #pack triangles into col file
         else:
             group.ColParameter_offset = stream.tell()
             for triangle in group.triangles:
-                uint16.pack(stream,triangle.ColParameter)
+                if triangle.ColParameter is not None:
+                    uint16.pack(stream,triangle.ColParameter)
+                else:
+                    uint16.pack(stream,0)
 
     stream.seek(header.group_offset)
     for group in groups:
@@ -213,7 +216,6 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
                         ColParameterAreEqual = (f.ColParameter == mat.ColEditor.ColParameterField)
                         ColParameterDontExist = f.ColParameter is None and mat.ColEditor.HasColParameterField is False #If the ColParameter doesn't exist we need to check for that case
                         if ColParameterAreEqual or ColParameterDontExist:
-                            MyFace.material_index = i
                             break #We assigned our material 
                 else: #We did not find a material that matched
                     MaterialName = str(f.ColType) + "," + str(f.TerrainType) + "," + str(f.unknown) + "," + str(f.ColParameter)
