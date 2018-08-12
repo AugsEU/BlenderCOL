@@ -125,7 +125,6 @@ def pack(stream,vertices,triangles): #pack triangles into col file
         else:
             group.ColParameter_offset = stream.tell()
             for triangle in group.triangles:
-                print(triangle.ColParameter)
                 uint16.pack(stream,triangle.ColParameter)
 
     stream.seek(header.group_offset)
