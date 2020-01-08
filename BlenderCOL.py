@@ -216,6 +216,7 @@ class ImportCOL(Operator, ExportHelper): #Operator that exports the collision mo
                         ColParameterAreEqual = (f.ColParameter == mat.ColEditor.ColParameterField)
                         ColParameterDontExist = f.ColParameter is None and mat.ColEditor.HasColParameterField is False #If the ColParameter doesn't exist we need to check for that case
                         if ColParameterAreEqual or ColParameterDontExist:
+                            MyFace.material_index = i
                             break #We assigned our material 
                 else: #We did not find a material that matched
                     MaterialName = str(f.ColType) + "," + str(f.TerrainType) + "," + str(f.unknown) + "," + str(f.ColParameter)
